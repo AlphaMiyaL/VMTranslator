@@ -1,2 +1,2 @@
 #Result files
-.asm
+*.asm
