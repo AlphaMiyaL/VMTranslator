@@ -8,9 +8,8 @@ import java.util.Scanner;
  * @description Parses VM program and commands into fields
  */
 public class Parser {
-	private int currLineNum;			//int of current line in file
-	private String[] currCmd;			//Current command to parse
-	private ArrayList<String> instructions = new ArrayList<String>();
+	private String currCmd;			//Current command to parse
+	private Scanner reader;			//Scanner reading the file
 	
 	//Instruction numbers
 	public static final int C_ARITHMETIC = 1;
@@ -23,86 +22,8 @@ public class Parser {
 	public static final int C_CALL = 8;
 	public static final int C_RETURN = 9;
 	
-	ArrayList<String> arithmeticCommands;	//Arraylist of arithmetic commands
-	
-	public Parser(File input) throws FileNotFoundException, Exception {
-        try {                                                                   
-        	// add all non-whitespace lines to an array list of instructions
-            removeWhitespace(input);
-            initializeArithmeticCommands();
-            currLineNum = 0;
-            if(!instructions.isEmpty()) {
-                currCmd = instructions.get(currLineNum).split("\\s");
-            } else {
-                throw new Exception("No valid instructions.");
-            }
-        } catch (FileNotFoundException e) {
-            throw new FileNotFoundException(e.getMessage());
-        }
-    }
-	
-	/**
-	 * Adds all arthmetic/logic commands into arthmethic arraylist
-	 */
-	private void initializeArithmeticCommands() {
-        arithmeticCommands = new ArrayList<String>();
-
-        arithmeticCommands.add("add");
-        arithmeticCommands.add("sub");
-        arithmeticCommands.add("neg");
-        arithmeticCommands.add("eq");
-        arithmeticCommands.add("gt");
-        arithmeticCommands.add("lt");
-        arithmeticCommands.add("and");
-        arithmeticCommands.add("or");
-        arithmeticCommands.add("not");
-    }
-	
-	/**
-	 * Removes whitespace in given File
-	 * @param input File to remove whitespace in
-	 * @throws FileNotFoundException If input file does not exist
-	 */
-    public void removeWhitespace(File input) throws FileNotFoundException {
-        try {
-            Scanner in = new Scanner(input);
-
-            while(in.hasNext()) {
-            	// reads each line and splits into an array of string tokens
-                String next = in.nextLine();                                
-                String[] line = next.split("\\s");                          
-                String command = "";
-
-                for(int i = 0; i < line.length; i++) {
-                	// ignores empty lines
-                    if(line.length == 0) {                                  
-                        break;
-                    } 
-                    // ignores inline comments
-                    else if(line[i].length() > 1 && line[i].substring(0, 2).equals("//") && i != 0) {
-                        break;                                              
-                    }
-                    // ignores whole-line comments
-                    else if(line[i].length() > 1 && line[i].substring(0, 2).equals("//") && i == 0) {
-                        break;                                             
-                    }
-                    // preserves space between command words
-                    else {
-                        command += line[i];
-                        command += " ";                                     
-                    }
-                }
-
-                if(!(command.equals("") || command.equals(" "))) {
-                    instructions.add(command.trim());
-                }
-            }
-
-            in.close();
-
-        } catch(FileNotFoundException e) {
-            throw new FileNotFoundException("File not found: " + e.getMessage());
-        }
+	public Parser(Scanner sc) {
+        reader = sc;
     }
     
     /**
@@ -110,7 +31,7 @@ public class Parser {
      * @return True if lines are left, false otherwise
      */
     public boolean hasMoreCommands() {
-        return (currLineNum < instructions.size() - 1);
+        return reader.hasNextLine();
     }
 
     /**
@@ -119,8 +40,20 @@ public class Parser {
      * Initially not current command
      */
     public void advance() {
-        currLineNum++;
-        currCmd = instructions.get(currLineNum).split("\\s");
+    	if(hasMoreCommands()) {
+    		currCmd = reader.nextLine();
+    		// take out comments and trim for whitespaces
+            int commentIndex = currCmd.indexOf("/");
+            if (commentIndex >= 0) {
+                currCmd = currCmd.substring(0, commentIndex);
+            }
+            currCmd = currCmd.trim();
+            
+            //Move to next command if line was comment or whitespace
+            if(currCmd.isEmpty()) {
+            	advance();
+            }
+    	}
     }
 
     /**
@@ -128,44 +61,15 @@ public class Parser {
      * @return constant representing type of current command
      */
     public int commandType() {
-        String type = currCmd[0];
-        if(arithmeticCommands.contains(type)) {
-            return C_ARITHMETIC;
-        }
-
-        if(type.equalsIgnoreCase("push")) {
-            return C_PUSH;
-        }
-
-        if(type.equalsIgnoreCase("pop")) {
-            return C_POP;
-        }
-
-        if(type.equalsIgnoreCase("label")) {
-            return C_LABEL;
-        }
-
-        if(type.equalsIgnoreCase("goto")) {
-            return C_GOTO;
-        }
-
-        if(type.equalsIgnoreCase("if-goto")) {
-            return C_IF;
-        }
-
-        if(type.equalsIgnoreCase("function")) {
-            return C_FUNCTION;
-        }
-
-        if(type.equalsIgnoreCase("call")) {
-            return C_CALL;
-        }
-
-        if(type.equalsIgnoreCase("return")) {
-            return C_RETURN;
-        }
-
-        return 0;
+    	String cmd = currCmd.split(" ")[0];
+    	switch(cmd.toLowerCase()) {
+    		case "push":
+                return C_PUSH;
+            case "pop":
+                return C_POP;
+            default:
+                return C_ARITHMETIC;
+    	}
     }
 
     /**
@@ -174,12 +78,15 @@ public class Parser {
      * @return first arg of current command
      */
     public String arg1() {
-        if(this.commandType() == C_ARITHMETIC) {
-            return currCmd[0];
+        if (commandType() == C_RETURN) {
+            return null;
         }
-        else {
-            return currCmd[1];
+
+        if (commandType() == C_ARITHMETIC) {
+            return currCmd;
         }
+
+        return currCmd.split(" ")[1];
     }
 
     /**
@@ -188,11 +95,14 @@ public class Parser {
      * @return second argument of current command
      * @throws NumberFormatException if command argument is invalid
      */
-    public int arg2() throws NumberFormatException {
-        try {
-            return Integer.parseInt(currCmd[2]);
-        } catch (NumberFormatException e) {
-            throw new NumberFormatException("Invalid argument: " + e.getMessage());
+    public int arg2() {
+        if (commandType() == C_PUSH
+                || commandType() == C_POP
+                || commandType() == C_FUNCTION
+                || commandType() == C_CALL) {
+            return Integer.valueOf(currCmd.split(" ")[2]);
         }
+
+        return 0;
     }
 }

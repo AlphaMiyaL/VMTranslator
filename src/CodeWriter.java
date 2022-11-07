@@ -7,37 +7,28 @@ import java.io.PrintWriter;
  * @description Generates sequence of Hack assembly instructions based on parsed VM instructions
  */
 public class CodeWriter {
-	private String filename;		//Name of file to write instruction in
-	private PrintWriter writer;		//writer to write assembly instructions in file
-	private int currLine;			//current line in file
-	private int labelNum;			//location label point to
-	
-	public CodeWriter(File output) throws FileNotFoundException{
+	private String filename; // Name of file to write instruction in
+	private PrintWriter writer; // writer to write assembly instructions in file
+	private int labelNum; // location label point to
+
+	public CodeWriter(File file) {
 		try {
-			writer = new PrintWriter(output);
-			currLine = 0;
+			writer = new PrintWriter(file);
 			labelNum = 0;
-		} catch(FileNotFoundException e) {
-			throw new FileNotFoundException("File not found: " + e.getMessage());
+		}
+		catch(FileNotFoundException e) {
+			e.printStackTrace();
 		}
 	}
-	
+
 	/**
 	 * Changes filename to filename specified
+	 * 
 	 * @param filename String to change filename
 	 */
 	public void setFileName(String filename) {
-        this.filename = filename;
-    }
-	
-	/**
-	 * Writes line in file open in FileWriter
-	 * @param line	Line to write in file
-	 */
-	private void writeLine(String line) {
-        writer.println(line);
-        currLine++;
-    }
+		this.filename = filename;
+	}
 	
 	/**
 	 * Initalizing file with default Hack instructions
@@ -50,7 +41,223 @@ public class CodeWriter {
         writeLine("M=D");
         writeCall("Sys.init", 0);
     }
+
+	/**
+	 * Writes to output file the assembly code that implements the given arithmethic/logic command
+	 * 
+	 * @param operation String line containing the arithmetic operation
+	 */
+	public void writeArithmetic(String cmd) {
+		writer.printf("// %s\n",cmd);
+		// cases for each arithmetic/logic function
+		// add, sub, neg, eq, gt, lt, and, or, not
+		switch(cmd.toLowerCase()) {
+			case "add":
+				popStackToD();
+				decStackPointer();
+				loadStackPointerToA();
+				writer.println("M=D+M");
+				incStackPointer();
+				break;
+			case "sub":
+				popStackToD();
+				decStackPointer();
+				loadStackPointerToA();
+				writer.println("M=M-D");
+				incStackPointer();
+				break;
+			case "neg":
+				decStackPointer();
+				loadStackPointerToA();
+				writer.println("M=-M");
+				incStackPointer();
+				break;
+			case "eq":
+				writeCompareLogic("JEQ");
+				break;
+			case "gt":
+				writeCompareLogic("JGT");
+				break;
+			case "lt":
+				writeCompareLogic("JLT");
+				break;
+			case "and":
+				popStackToD();
+				decStackPointer();
+				loadStackPointerToA();
+				writer.println("M=D&M");
+				incStackPointer();
+				break;
+			case "or":
+				popStackToD();
+				decStackPointer();
+				loadStackPointerToA();
+				writer.println("M=D|M");
+				incStackPointer();
+				break;
+			case "not":
+				decStackPointer();
+				loadStackPointerToA();
+				writer.println("M=!M");
+				incStackPointer();
+				break;
+		}
+	}
+
+	/**
+	 * Writes to output file the assembly code that implements the given push/pop command
+	 * 
+	 * @param command Push/Pop command to translate
+	 * @param segment String segment
+	 * @param index   int index within segment
+	 */
+	public void writePushPop(int cmd, String segment, int index) {
+		switch(cmd) {
+			case Parser.C_PUSH:
+				writer.printf("// push %s %d\n", segment, index);
+				switch(segment) {
+					case "constant":
+						// store value in D
+						writer.println("@" + index);
+						writer.println("D=A");
+						break;
+					case "local":
+						loadSegment("LCL", index);
+						writer.println("D=M");
+						break;
+					case "argument":
+						loadSegment("ARG", index);
+						writer.println("D=M");
+						break;
+					case "this":
+						loadSegment("THIS", index);
+						writer.println("D=M");
+						break;
+					case "that":
+						loadSegment("THAT", index);
+						writer.println("D=M");
+						break;
+					case "pointer":
+						writer.println("@R" + String.valueOf(3+index));
+						writer.println("D=M");
+						break;
+					case "temp":
+						writer.println("@R" + String.valueOf(5+index));
+						writer.println("D=M");
+						break;
+					case "static":
+						writer.println("@" + filename.split("\\.")[0] + String.valueOf(index));
+						writer.println("D=M");
+				}
+				pushDToStack();
+				break;
+			case Parser.C_POP:
+				writer.printf("// pop %s %d\n", segment, index);
+				switch(segment) {
+					case "constant":
+						writer.println("@" + index);
+						break;
+					case "local":
+						loadSegment("LCL", index);
+						break;
+					case "argument":
+						loadSegment("ARG", index);
+						break;
+					case "this":
+						loadSegment("THIS", index);
+						break;
+					case "that":
+						loadSegment("THAT", index);
+						break;
+					case "pointer":
+						writer.println("@R" + String.valueOf(3+index));
+						break;
+					case "temp":
+						writer.println("@R" + String.valueOf(5+index));
+						break;
+					case "static":
+						writer.println("@" + filename.split("\\.")[0] + String.valueOf(index));
+						break;
+				}
+				writer.println("D=A");
+				writer.println("@R13");
+				writer.println("M=D");
+				popStackToD();
+				writer.println("@R13");
+				writer.println("A=M");
+				writer.println("M=D");
+				break;
+		}
+	}
+
+	/**
+	 * Closes writer
+	 */
+	public void close() {
+		writer.close();
+	}
+
+	private void incStackPointer() {
+		writer.println("@SP");
+		writer.println("M=M+1");
+	}
+
+	private void decStackPointer() {
+		writer.println("@SP");
+		writer.println("M=M-1");
+	}
+
+	private void popStackToD() {
+		decStackPointer();
+		writer.println("A=M");
+		writer.println("D=M");
+	}
+
+	private void pushDToStack() {
+		loadStackPointerToA();
+		writer.println("M=D");
+		incStackPointer();
+	}
+
+	private void loadStackPointerToA() {
+		writer.println("@SP");
+		writer.println("A=M");
+	}
+
+	private void writeCompareLogic(String jumpCmd) {
+		popStackToD();
+		decStackPointer();
+		loadStackPointerToA();
+		writer.println("D=M-D");
+		writer.println("@LABEL" + labelNum);
+		writer.println("D;" + jumpCmd);
+		loadStackPointerToA();
+		writer.println("M=0");
+		writer.println("@ENDLABEL" + labelNum);
+		writer.println("0;JMP");
+		writer.println("(LABEL" + labelNum + ")");
+		loadStackPointerToA();
+		writer.println("M=-1");
+		writer.println("(ENDLABEL" + labelNum + ")");
+		incStackPointer();
+		labelNum++;
+	}
+
+	private void loadSegment(String seg, int idx) {
+		writer.println("@" + seg);
+		writer.println("D=M");
+		writer.println("@" + String.valueOf(idx));
+		writer.println("A=D+A");
+	}
 	
+	/**
+	 * Writes line in file open in FileWriter
+	 * @param line	Line to write in file
+	 */
+	private void writeLine(String line) {
+        writer.println(line);
+    }
+
 	/**
 	 * Writes a user-defined label into file
 	 * @param label String value of label
@@ -270,190 +477,4 @@ public class CodeWriter {
             return "@R5";
         } else return null;
     }
-
-    /**
-     * Closes writer
-     */
-    public void close() {
-        writer.close();
-    }
-	
-	/**
-	 * Writes to output file the assembly code that implements the given arithmethic/logic command
-	 * @param operation String line containing the arithmetic operation
-	 */
-	public void writeArithmetic(String operation) {
-        writer.println("// " + operation);
-        //Add, Sub, And, Or
-        if(operation.equalsIgnoreCase("add") || operation.equalsIgnoreCase("sub") 
-        		|| operation.equalsIgnoreCase("and") || operation.equalsIgnoreCase("or")) {
-            writeLine("@SP");
-            writeLine("AM=M-1");
-            writeLine("D=M");
-            writeLine("A=A-1");
-
-            if(operation.equalsIgnoreCase("add")) {
-                writeLine("M=D+M");
-            } 
-            else if(operation.equalsIgnoreCase("sub")) {
-                writeLine("M=M-D");
-            } 
-            else if(operation.equalsIgnoreCase("and")) {
-                writeLine("M=D&M");
-            } 
-            else if(operation.equalsIgnoreCase("or")) {
-                writeLine("M=D|M");
-            }
-        } 
-        //Equals, Less Than, Greater Than
-        else if(operation.equalsIgnoreCase("eq") || operation.equalsIgnoreCase("lt") || operation.equalsIgnoreCase("gt")) {
-            writeLine("@SP");
-            writeLine("AM=M-1");
-            writeLine("D=M");
-            writeLine("A=A-1");
-            writeLine("D=D-M");
-            writeLine("@" + (currLine + 7));
-
-            if(operation.equalsIgnoreCase("eq")) {
-                writeLine("D;JEQ");
-            } 
-            else if(operation.equalsIgnoreCase("lt")) {
-                writeLine("D;JGT");
-            } 
-            else if(operation.equalsIgnoreCase("gt")) {
-                writeLine("D;JLT");
-            }
-
-            writeLine("@SP");
-            writeLine("A=M-1");
-            writeLine("M=0");
-            writeLine("@" + (currLine + 5));
-            writeLine("0;JMP");
-            writeLine("@SP");
-            writeLine("A=M-1");
-            writeLine("M=-1");
-
-        } 
-        //Not
-        else if(operation.equalsIgnoreCase("not")) {
-            writeLine("@SP");
-            writeLine("A=M-1");
-            writeLine("M=!M");
-
-        }
-        //Negative
-        else if(operation.equalsIgnoreCase("neg")) {
-            writeLine("D=0");
-            writeLine("@SP");
-            writeLine("A=M-1");
-            writeLine("M=D-M");
-        }
-    }
-	
-	/**
-	 * Writes to output file the assembly code that implements the given push/pop command
-	 * @param command Push/Pop command to translate
-	 * @param segment String segment
-	 * @param index   int index within segment
-	 */
-	public void writePushPop(int command, String segment, int index) {
-        writer.println("// " + command + segment + index);
-        //Push command
-        if(command == Parser.C_PUSH) {
-        	//Pointer
-            if(segment.equalsIgnoreCase("pointer")) {
-                if(index == 0) {
-                    writeLine("@THIS");
-                } 
-                else if(index == 1) {
-                    writeLine("@THAT");
-                }
-                writeLine("D=M");
-            } 
-            //Static
-            else if(segment.equalsIgnoreCase("static")) {
-                writeLine("@" + filename + "." + index);
-                writeLine("D=M");
-            } 
-            else if(index == 0 && !segment.equalsIgnoreCase("constant")) {
-                writeLine(getLabel(segment));
-                writeLine("A=M");
-                writeLine("D=M");
-            } 
-            //Constant
-            else if(index > 0 || segment.equalsIgnoreCase("constant")) {
-                writeLine("@" + index);
-                writeLine("D=A");
-            }
-
-            //Write Label equivalent in Hack if not constant, pointer, or static
-            if(index > 0 && !segment.equalsIgnoreCase("constant") 
-            		&& !segment.equalsIgnoreCase("pointer")
-                    && !segment.equalsIgnoreCase("static")) {
-                writeLine(getLabel(segment));
-
-                if(segment.equalsIgnoreCase("temp")) {
-                    writeLine("A=D+A");
-                } 
-                else {
-                    writeLine("A=D+M");
-                }
-                writeLine("D=M");
-            }
-
-            writeLine("@SP");
-            writeLine("A=M");
-            writeLine("M=D");
-            writeLine("@SP");
-            writeLine("M=M+1");
-
-        } 
-        //Pop command
-        else if(command == Parser.C_POP) {
-        	//Pointer, Static
-            if(index == 0 || segment.equalsIgnoreCase("pointer") || segment.equalsIgnoreCase("static")) {
-                writeLine("@SP");
-                writeLine("AM=M-1");
-                writeLine("D=M");
-                if(segment.equalsIgnoreCase("pointer") && index == 0) {
-                    writeLine("@THIS");
-                } 
-                else if(segment.equalsIgnoreCase("pointer") && index == 1) {
-                    writeLine("@THAT");
-                } 
-                else if(segment.equalsIgnoreCase("static")) {
-                    writeLine("@" + filename + "." + index);
-                }
-                else {
-                    writeLine(getLabel(segment));
-                }
-
-            } 
-            else if(index > 0) {
-                writeLine("@" + index);
-                writeLine("D=A");
-                writeLine(getLabel(segment));
-
-                if(segment.equalsIgnoreCase("temp")) {
-                    writeLine("D=D+A");
-                } else {
-                    writeLine("D=D+M");
-                }
-
-                writeLine("@R13");
-                writeLine("M=D");
-                writeLine("@SP");
-                writeLine("AM=M-1");
-                writeLine("D=M");
-                writeLine("@R13");
-            }
-
-            if(!segment.equalsIgnoreCase("pointer") && !segment.equalsIgnoreCase("static")
-                    && !segment.equalsIgnoreCase("temp")) {
-                writeLine("A=M");
-            }
-            writeLine("M=D");
-        }
-    }
-	
 }
