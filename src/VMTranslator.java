@@ -41,6 +41,7 @@ public class VMTranslator {
 	 * Make sure you set console to false if not using console to find files
 	 * ie: resources/BasicTest
 	 * Generates assembly files from .vm files
+	 * Comment out the init for the functions that do not need the BOOTSTRAP CODE
 	 * @param args
 	 */
     public static void main(String[] args) {
@@ -78,6 +79,7 @@ public class VMTranslator {
 
                     CodeWriter cw = new CodeWriter(output);
 
+                    //Comment this out if not using it
                     cw.writeInit();
 
                     for(File f : files) {
